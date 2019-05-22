@@ -192,8 +192,6 @@ class DataLoader(Sequence):
         return imgs_lr, imgs_hr
 
 
-    
-
     def load_batch_video(self, idx=0, img_paths=None, training=True, bicubic=False):
         """Loads a batch of frames from videos folder""" 
         # Starting index to look in
@@ -326,16 +324,8 @@ class DataLoader(Sequence):
                         break   
 
                     # For LR, do bicubic downsampling
-                    lr_shape = (int(img_hr.shape[1]/self.scale), int(img_hr.shape[0]/self.scale))  
-                    hr_shape = (img_hr.shape[1], img_hr.shape[0]) 
-                    
-                    """ img_lr = Image.fromarray(img_hr.astype(np.uint8))
-                    method = Image.BICUBIC if bicubic else choice(self.options)
-                    img_lr = img_lr.resize(lr_shape, method)
-                    img_lr = np.array(img_lr.resize(hr_shape, method)) """
-                    
+                    lr_shape = (int(img_hr.shape[1]/self.scale), int(img_hr.shape[0]/self.scale))                      
                     img_lr = cv2.resize(img_hr,lr_shape, interpolation = cv2.INTER_CUBIC)
-                    img_lr = cv2.resize(img_lr,hr_shape, interpolation = cv2.INTER_CUBIC)
 
                     
                     # Scale color values
@@ -344,7 +334,7 @@ class DataLoader(Sequence):
 
                     # Store images
                     #print(img_hr[6:-6,6:-6,:self.channel].shape,img_lr[:,:,:self.channel].shape)
-                    imgs_hr.append(img_hr[6:-6,6:-6,:self.channel])
+                    imgs_hr.append(img_hr[:,:,:self.channel])
                     imgs_lr.append(img_lr[:,:,:self.channel])
                 
             except Exception as e:
@@ -535,7 +525,7 @@ class VideoRestore():
         return time_elapsed
 
 
-def plot_test_images(model, loader, datapath_test, test_output, epoch, name='SRGAN'):
+def plot_test_images(model, loader, datapath_test, test_output, epoch, name='ESPCN'):
     """        
     :param SRGAN model: The trained SRGAN model
     :param DataLoader loader: Instance of DataLoader for loading images
@@ -552,6 +542,7 @@ def plot_test_images(model, loader, datapath_test, test_output, epoch, name='SRG
         imgs_lr, imgs_hr = loader.load_batch(img_paths=test_images, training=False, bicubic=True)
         # Create super resolution and bicubic interpolation images
         imgs_sr = []
+        imgs_bi = []
         srcnn_psnr = []
         bi_psnr = []
         for i in range(len(test_images)):
@@ -567,11 +558,10 @@ def plot_test_images(model, loader, datapath_test, test_output, epoch, name='SRG
             pre[pre[:] < 0] = 0
             # SRCNN prediction
             imgs_sr.append(pre)
-
-           
+ 
         
         # Unscale colors values
-        imgs_lr = [loader.unscale_lr_imgs(img[6:-6,6:-6,0]).astype(np.uint8) for img in imgs_lr]
+        imgs_lr = [loader.unscale_lr_imgs(img[:,:,0]).astype(np.uint8) for img in imgs_lr]
         imgs_hr = [loader.unscale_hr_imgs(img[:,:,0]).astype(np.uint8) for img in imgs_hr]
         imgs_sr = [loader.unscale_hr_imgs(img).astype(np.uint8) for img in imgs_sr]
 	
@@ -581,20 +571,23 @@ def plot_test_images(model, loader, datapath_test, test_output, epoch, name='SRG
 
             # Get the filename
             filename = os.path.basename(img_path).split(".")[0]
+            hr_shape = (int(img_hr.shape[1]), int(img_hr.shape[0]))                      
+            img_bi = cv2.resize(img_lr,hr_shape, interpolation = cv2.INTER_CUBIC)
 	    
-	    
+
             # Images and titles
             images = {
-                'Bicubic': [img_lr, img_hr],  
+                'Low Resoluiton': [img_lr, img_hr],
+                'Bicubic': [img_bi, img_hr],  
                 name: [img_sr, img_hr], 
                 'Original': [img_hr,img_hr]
             }
             srcnn_psnr.append(psnr(img_sr,img_hr,255.))
-            bi_psnr.append(psnr(img_lr,img_hr,255.))
+            bi_psnr.append(psnr(img_bi,img_hr,255.))
 	    
 
         # Plot the images. Note: rescaling and using squeeze since we are getting batches of size 1                    
-            fig, axes = plt.subplots(1, 3, figsize=(40, 10))
+            fig, axes = plt.subplots(1, 4, figsize=(40, 10))
             for i, (title, img) in enumerate(images.items()):
                 axes[i].imshow(img[0])
                 axes[i].set_title("{} - {} {}".format(title, img[0].shape, ("- psnr: "+str(round(psnr(img[0],img[1],255.),2)) if (title == name or title == 'Bicubic' ) else " ")))

@@ -1,7 +1,7 @@
 import os
 import tensorflow as tf
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
-from keras.layers import Input, Conv2D, MaxPooling2D
+from keras.layers import Input, Conv2D, Lambda
 from keras.layers import ReLU
 from keras.optimizers import SGD, Adam
 from keras.models import Model
@@ -14,7 +14,7 @@ from util import DataLoader, plot_test_images
 from losses import psnr3 as psnr
 from losses import euclidean
 
-class SRCNN():
+class ESPCN():
     def __init__(self,
                  height_lr=24, width_lr=24, channels=1,
                  upscaling_factor=4, lr = 1e-3,
@@ -43,23 +43,23 @@ class SRCNN():
         self.loss = "mse"
         self.lr = lr
 
-        self.srcnn = self.build_srcnn()
-        self.compile_srcnn(self.srcnn)
+        self.model = self.build_model()
+        self.compile_model(self.model)
 
 
     def save_weights(self, filepath):
         """Save the networks weights"""
-        self.srcnn.save_weights(
+        self.model.save_weights(
             "{}_{}X.h5".format(filepath, self.upscaling_factor))
         
 
     def load_weights(self, weights=None, **kwargs):
         print(">> Loading weights...")
         if weights:
-            self.srcnn.load_weights(weights, **kwargs)
+            self.model.load_weights(weights, **kwargs)
         
     
-    def compile_srcnn(self, model):
+    def compile_model(self, model):
         """Compile the srcnn with appropriate optimizer"""
         
         model.compile(
@@ -68,25 +68,41 @@ class SRCNN():
             metrics=[psnr]
         )
 
-    def build_srcnn(self):
+    def build_model(self):
+
+        def SubpixelConv2D(scale=2,name="subpixel"):
+            
+            def subpixel_shape(input_shape):
+                dims = [input_shape[0],
+                        None if input_shape[1] is None else input_shape[1] * scale,
+                        None if input_shape[2] is None else input_shape[2] * scale,
+                        int(input_shape[3] / (scale ** 2))]
+                output_shape = tuple(dims)
+                return output_shape
+
+            def subpixel(x):
+                return tf.depth_to_space(x, scale)
+
+            return Lambda(subpixel, output_shape=subpixel_shape, name=name)
 
         inputs = Input(shape=(None, None, self.channels))
-          
-        conv1 = Conv2D(filters= 64, kernel_size = (9,9), strides=1, 
-            kernel_initializer=RandomNormal(mean=0.0, stddev=0.001, seed=None),bias_initializer='zeros',
-            padding = "valid", use_bias=True, name='conv1')(inputs)
-        conv1 = ReLU()(conv1)
 
-        conv2 = Conv2D(filters= 32, kernel_size = (5,5), strides=1, 
-            kernel_initializer=RandomNormal(mean=0.0, stddev=0.001, seed=None),bias_initializer='zeros',
-            padding = "valid", use_bias=True, name='conv2')(conv1)
-        conv2 = ReLU()(conv2)
 
-        conv3 = Conv2D(filters= 1, kernel_size = (5,5), strides=1, 
-            kernel_initializer=RandomNormal(mean=0.0, stddev=0.001, seed=None),bias_initializer='zeros',
-            padding = "valid", use_bias=True, name='conv3')(conv1)
+        x = Conv2D(filters = 64, kernel_size = (5,5), strides=1,
+                kernel_initializer=RandomNormal(mean=0.0, stddev=0.001, seed=None),bias_initializer='zeros', 
+                padding = "same",activation='relu',name='conv_1')(inputs)
+
+        x = Conv2D(filters = 32, kernel_size = (3,3), strides=1,
+                kernel_initializer=RandomNormal(mean=0.0, stddev=0.001, seed=None),bias_initializer='zeros', 
+                padding = "same",activation='relu',name='conv_2')(x)
         
-        model = Model(inputs=inputs, outputs=conv3)
+        x = Conv2D(filters = self.upscaling_factor**2*self.channels, kernel_size = (3,3), strides=1,
+                kernel_initializer=RandomNormal(mean=0.0, stddev=0.001, seed=None),bias_initializer='zeros', 
+                padding = "same",activation='tanh',name='conv_3')(x)
+        
+        x = SubpixelConv2D(scale=self.upscaling_factor,name='subpixel_1')(x)
+        
+        model = Model(inputs=inputs, outputs=x)
         model.summary()
         return model
 
@@ -100,7 +116,7 @@ class SRCNN():
             log_tensorboard_update_freq=10,
             workers=4,
             max_queue_size=5,
-            model_name='TSRGANSRCNN',
+            model_name='ESPCN',
             datapath_train='../../../videos_harmonic/MYANMAR_2160p/train/',
             datapath_validation='../../../videos_harmonic/MYANMAR_2160p/validation/',
             datapath_test='../../../videos_harmonic/MYANMAR_2160p/test/',
@@ -156,13 +172,13 @@ class SRCNN():
         # Callback: Stop training when a monitored quantity has stopped improving
         earlystopping = EarlyStopping(
             monitor='val_loss', 
-            patience=30, verbose=1, 
+            patience=40, verbose=1, 
             restore_best_weights=True )
         callbacks.append(earlystopping)
 
         # Callback: Reduce lr when a monitored quantity has stopped improving
         reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5,
-                                    patience=20, min_lr=2*1e-6)
+                                    patience=20, min_lr=1e-4)
         callbacks.append(reduce_lr)
 
         # Callback: save weights after each epoch
@@ -177,7 +193,7 @@ class SRCNN():
         if datapath_test is not None:
             testplotting = LambdaCallback(
                 on_epoch_end=lambda epoch, logs: None if ((epoch+1) % print_frequency != 0 ) else plot_test_images(
-                    self.srcnn,
+                    self.model,
                     test_loader,
                     datapath_test,
                     log_test_path,
@@ -187,7 +203,7 @@ class SRCNN():
 
         #callbacks.append(TQDMCallback())
 
-        self.srcnn.fit_generator(
+        self.model.fit_generator(
             train_loader,
             steps_per_epoch=steps_per_epoch,
             epochs=epochs,
@@ -199,18 +215,18 @@ class SRCNN():
             workers=workers
         )
 
-# Run the SRCNN network
+# Run the ESPCN network
 if __name__ == "__main__":
 
     # Instantiate the TSRGAN object
-    print(">> Creating the SRCNN network")
-    srcnn = SRCNN(height_lr=16, width_lr=16,lr=1e-5,upscaling_factor=2)
-    #srcnn.load_weights(weights='../model/SRCNN_2X.h5')
+    print(">> Creating the ESPCN network")
+    espcn = ESPCN(height_lr=17, width_lr=17,lr=1e-2,upscaling_factor=2)
+    espcn.load_weights(weights='../model/ESPCN_2X.h5')
     
 
-    srcnn.train(
+    espcn.train(
             epochs=1000,
-            batch_size=32,
+            batch_size=128,
             steps_per_epoch=200,
             steps_per_validation=10,
             crops_per_image=4,
@@ -218,7 +234,7 @@ if __name__ == "__main__":
             log_tensorboard_update_freq=10,
             workers=2,
             max_queue_size=11,
-            model_name='SRCNN',
+            model_name='ESPCN',
             datapath_train='../../data/train2017/', 
             datapath_validation='../../data/val_large', 
             datapath_test='../../data/SR_testing_datasets/Set5/',
