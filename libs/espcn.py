@@ -2,7 +2,7 @@ import os
 import tensorflow as tf
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 from keras.layers import Input, Conv2D, Lambda
-from keras.layers import ReLU
+from keras.layers import ReLU, Activation
 from keras.optimizers import SGD, Adam
 from keras.models import Model
 from keras.callbacks import TensorBoard, ModelCheckpoint, LambdaCallback
@@ -15,13 +15,22 @@ from losses import psnr3 as psnr
 from losses import euclidean
 
 class ESPCN():
+    """
+        height_lr: height of the lr image
+        width_lr: width of the lr image 
+        channels: number of channel of the image
+        upscaling_factor= factor upscaling
+        lr = learning rate
+        training_mode: True or False
+        colorspace: 'RGB' or 'YCbCr'
+    """
     def __init__(self,
                  height_lr=24, width_lr=24, channels=1,
                  upscaling_factor=4, lr = 1e-3,
                  training_mode=True,
-                 media_type='i'
+                 colorspace = 'RGB'
                  ):
-        self.media_type = media_type
+        
 
         # Low-resolution image dimensions
         self.height_lr = height_lr
@@ -37,6 +46,7 @@ class ESPCN():
 
         # Low-resolution and high-resolution shapes
         self.channels = channels
+        self.colorspace = colorspace
         self.shape_lr = (self.height_lr, self.width_lr, self.channels)
         self.shape_hr = (self.height_hr, self.width_hr, self.channels)
 
@@ -64,7 +74,7 @@ class ESPCN():
         
         model.compile(
             loss=self.loss,
-            optimizer=Adam(lr=self.lr,beta_1=0.9, beta_2=0.999), #SGD(lr=self.lr, momentum=0.9, decay=1e-6, nesterov=True), 
+            optimizer=Adam(lr=self.lr,beta_1=0.9, beta_2=0.999), 
             metrics=[psnr]
         )
 
@@ -98,9 +108,11 @@ class ESPCN():
         
         x = Conv2D(filters = self.upscaling_factor**2*self.channels, kernel_size = (3,3), strides=1,
                 kernel_initializer=RandomNormal(mean=0.0, stddev=0.001, seed=None),bias_initializer='zeros', 
-                padding = "same",activation='tanh',name='conv_3')(x)
+                padding = "same",name='conv_3')(x)
         
         x = SubpixelConv2D(scale=self.upscaling_factor,name='subpixel_1')(x)
+
+        x = Activation('tanh')(x)
         
         model = Model(inputs=inputs, outputs=x)
         model.summary()
@@ -122,7 +134,8 @@ class ESPCN():
             datapath_test='../../../videos_harmonic/MYANMAR_2160p/test/',
             log_weight_path='../model/', 
             log_tensorboard_path='../logs/',
-            log_test_path='../test/'
+            log_test_path='../test/',
+            media_type='i'
         ):
 
         # Create data loaders
@@ -131,7 +144,9 @@ class ESPCN():
             self.height_hr, self.width_hr,
             self.upscaling_factor,
             crops_per_image,
-            self.media_type
+            media_type,
+            self.channels,
+            self.colorspace
         )
 
         validation_loader = None 
@@ -141,7 +156,9 @@ class ESPCN():
                 self.height_hr, self.width_hr,
                 self.upscaling_factor,
                 crops_per_image,
-                self.media_type
+                media_type,
+                self.channels,
+                self.colorspace
         )
 
         test_loader = None
@@ -150,8 +167,8 @@ class ESPCN():
                 datapath_test, 1,
                 self.height_hr, self.width_hr,
                 self.upscaling_factor,
-                1,
-                self.media_type
+                1,media_type,
+                self.channels,self.colorspace
         )
 
         # Callback: tensorboard
@@ -198,7 +215,9 @@ class ESPCN():
                     datapath_test,
                     log_test_path,
                     epoch+1,
-                    name=model_name))
+                    name=model_name,
+                    channels=self.channels,
+                    colorspace=self.colorspace))
         callbacks.append(testplotting)
 
         #callbacks.append(TQDMCallback())
@@ -220,14 +239,14 @@ if __name__ == "__main__":
 
     # Instantiate the TSRGAN object
     print(">> Creating the ESPCN network")
-    espcn = ESPCN(height_lr=17, width_lr=17,lr=1e-2,upscaling_factor=2)
-    espcn.load_weights(weights='../model/ESPCN_2X.h5')
+    espcn = ESPCN(height_lr=17, width_lr=17,channels=3,lr=1e-2,upscaling_factor=2,colorspace = 'RGB')
+    #espcn.load_weights(weights='../model/ESPCN_2X.h5')
     
 
     espcn.train(
             epochs=1000,
             batch_size=128,
-            steps_per_epoch=200,
+            steps_per_epoch=10,
             steps_per_validation=10,
             crops_per_image=4,
             print_frequency=1,
@@ -235,9 +254,10 @@ if __name__ == "__main__":
             workers=2,
             max_queue_size=11,
             model_name='ESPCN',
+            media_type='i',
             datapath_train='../../data/train2017/', 
             datapath_validation='../../data/val_large', 
-            datapath_test='../../data/SR_testing_datasets/Set5/',
+            datapath_test='../../data//benchmarks/Set5/',
             log_weight_path='../model/', 
             log_tensorboard_path='../logs/',
             log_test_path='../test/'

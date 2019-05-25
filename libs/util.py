@@ -20,7 +20,7 @@ from losses import psnr2 as psnr
 
 
 class DataLoader(Sequence):
-    def __init__(self, datapath, batch_size, height_hr, width_hr, scale, crops_per_image, media_type,time_step=1):
+    def __init__(self, datapath, batch_size, height_hr, width_hr, scale, crops_per_image, media_type,channels=3,colorspace='RGB'):
         """        
         :param string datapath: filepath to training images
         :param int height_hr: Height of high-resolution images
@@ -37,11 +37,12 @@ class DataLoader(Sequence):
         self.height_lr = int(height_hr / scale)
         self.width_hr = width_hr
         self.width_lr = int(width_hr / scale)
-        self.channel = 1
+        self.channels = channels
+        self.colorspace = colorspace
         self.scale = scale
         self.crops_per_image = crops_per_image
         self.media_type  = media_type
-        self.time_step=time_step
+        self.time_step=1
         self.total_imgs = None
         
         # Options for resizing
@@ -123,11 +124,14 @@ class DataLoader(Sequence):
             choiced_frames = np.random.randint(t_frames-time_step, size=n_fms)
         return choiced_frames
     
+    
     @staticmethod
-    def load_img(path):
+    def load_img(path,colorspace='YCbCr'):
         img = Image.open(path)
-        if img.mode != 'YCbCr':
-            img = img.convert('YCbCr')  
+        if (colorspace ==  'YCbCr' and img.mode != 'YCbCr'):
+            img = img.convert('YCbCr') 
+        if (colorspace ==  'RGB' and img.mode != 'RGB'):
+            img = img.convert('RGB')     
         return np.array(img)
 
 
@@ -300,9 +304,9 @@ class DataLoader(Sequence):
                 # Load image
                 img_hr = None
                 if img_paths:
-                    img_hr = self.load_img(img_paths[cur_idx])
+                    img_hr = self.load_img(img_paths[cur_idx],self.colorspace)
                 else:
-                    img_hr = self.load_img(self.img_paths[cur_idx])
+                    img_hr = self.load_img(self.img_paths[cur_idx],self.colorspace)
                 # Create HR images to go through
                 img_crops = []
                 if training:
@@ -333,9 +337,9 @@ class DataLoader(Sequence):
                     img_lr = self.scale_lr_imgs(img_lr)
 
                     # Store images
-                    #print(img_hr[6:-6,6:-6,:self.channel].shape,img_lr[:,:,:self.channel].shape)
-                    imgs_hr.append(img_hr[:,:,:self.channel])
-                    imgs_lr.append(img_lr[:,:,:self.channel])
+                    #print(img_hr[:,:,:self.channels].shape,img_lr[:,:,:self.channels].shape)
+                    imgs_hr.append(img_hr[:,:,:self.channels])
+                    imgs_lr.append(img_lr[:,:,:self.channels])
                 
             except Exception as e:
                 print(e)
@@ -352,188 +356,10 @@ class DataLoader(Sequence):
         # Return image batch
         return imgs_lr, imgs_hr
     
-    def sr_genarator(self,model,img_lr):
-        """Predict sr frame given a LR frame"""
-        # Predict high-resolution version (add batch dimension to image)
-        img_lr=self.scale_lr_imgs(img_lr)
-        img_sr = model.generator.predict(np.expand_dims(img_lr, 0))
-        # Remove batch dimension
-        img_sr = img_sr.reshape(img_sr.shape[1], img_sr.shape[2], img_sr.shape[3])
-        img_sr = self.unscale_hr_imgs(img_sr)
-        return img_sr
-
-    def write_sr_images(self,model, input_images, output_images):
-        """        
-        :param SRGAN model: The trained SRGAN model
-        :param list input_images: List of filepaths for input images
-        :param list output_images: List of filepaths for output images
-        """
-       
-        # Load the images to perform test on images
-        imgs_lr, imgs_hr = self.load_batch(idx=0,img_paths=input_images, training=False)
-        # Scale color values
-        imgs_hr = self.unscale_hr_imgs(np.array(imgs_hr))
-        imgs_lr = self.unscale_lr_imgs(np.array(imgs_lr)) 
-
-        # Create super resolution images
-        imgs_sr = []
-        time_elapsed = []
-        for img_lr,img_hr in zip(imgs_lr,imgs_hr):
-            start = timer()
-            img_sr = self.sr_genarator(model,img_lr)    
-            end = timer()
-            time_elapsed.append(end - start)   
-            
-            img_sr = Image.fromarray(img_sr.astype(np.uint8))
-            img_sr.save(output_images.split(".")[0]+"SR.png")
-            #imageio.imwrite(output_images.split(".")[0]+"SR.png", img_sr)
-            
-            img_hr = Image.fromarray(img_hr.astype(np.uint8))
-            img_hr.save(output_images.split(".")[0]+"HR.png")
-            #imageio.imwrite(output_images.split(".")[0]+"HR.png", img_hr)
-            
-            img_lr = Image.fromarray(img_lr.astype(np.uint8))
-            img_lr.save(output_images.split(".")[0]+"LR.png")
-            #imageio.imwrite(output_images.split(".")[0]+"LR.png", img_lr)
-        return time_elapsed
-
-
-class VideoRestore():
-    #def __init__(self):
-
-    @staticmethod
-    def scale_lr_imgs(imgs):
-        """Scale low-res images prior to passing to SRGAN"""
-        return imgs / 255.
-        
-    @staticmethod
-    def unscale_hr_imgs(imgs):
-        """Un-Scale high-res images"""
-        return (imgs + 1.) * 127.5
     
-    def count_frames_manual(self,cap):
-        count=0
-        while(cap.isOpened()):
-            ret, frame = cap.read()
-            if(ret):
-                count +=1
-            else:
-                break
-        return count
+
+def plot_test_images(model, loader, datapath_test, test_output, epoch, name='SRCNN', channels = 3,colorspace='RGB'):
     
-    def count_frames(self,cap):
-        '''Count total frames in video'''
-        try:
-            total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        except:
-            total = self.count_frames_manual(cap)
-        return total
-    
-    def sr_genarator(self,model,img_lr):
-        """Predict sr frame given a LR frame"""
-        # Predict high-resolution version (add batch dimension to image)
-        img_sr = np.squeeze(
-                    model.generator.predict(img_lr,
-                        batch_size=1
-                    ),
-                    axis=0
-                )
-        # Remove batch dimension
-        img_sr = self.unscale_hr_imgs(img_sr)
-        return img_sr
-       
-    def write_srvideo(self, model=None,lr_videopath=None,sr_videopath=None,print_frequency=30,crf=15):
-        """Predict SR video given LR video """
-        cap = cv2.VideoCapture(lr_videopath) 
-        if cap.isOpened():
-            fps = math.ceil(cap.get(cv2.CAP_PROP_FPS))
-            # ffmpeg setup '-qscale', '5',
-            p = Popen(['ffmpeg', '-y', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-r', str(fps), '-i', '-', '-vcodec', 'libx264','-preset', 'veryslow', '-crf',str(crf), '-r', str(fps), sr_videopath], stdin=PIPE)
-        else:
-            print("Error to open low resolution video")
-            return -1
-        
-        # Get video total frames
-        t_frames = self.count_frames(cap)    
-        #cria arquivo video hr if hr video is open
-        count = 0
-        time_elapsed = []
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if ret:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                start = timer()
-                img_sr = self.sr_genarator(model,frame)
-                end = timer()
-                time_elapsed.append(end - start)
-                im = Image.fromarray(img_sr.astype(np.uint8))
-                im.save(p.stdin, 'JPEG')
-                count +=1
-            else:
-                break
-            if(count % print_frequency == 0):
-                print('Time per Frame: '+str(np.mean(time_elapsed))+'s')
-                print('Estimated time: '+str(np.mean(time_elapsed)*(t_frames-count)/60.)+'min')
-        p.stdin.close()
-        p.wait()
-        cap.release()
-        return time_elapsed
-
-
-    def write_temporal_srvideo(self, model=None,lr_videopath=None,sr_videopath=None,print_frequency=30,crf=15,time_step=1):
-        """Predict SR video given LR video """
-        cap = cv2.VideoCapture(lr_videopath) 
-        if cap.isOpened():
-            fps = math.ceil(cap.get(cv2.CAP_PROP_FPS))
-            # ffmpeg setup '-qscale', '5',
-            p = Popen(['ffmpeg', '-y', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-r', str(fps), '-i', '-', '-vcodec', 'libx264','-preset', 'veryslow', '-crf',str(crf), '-r', str(fps), sr_videopath], stdin=PIPE)
-        else:
-            print("Error to open low resolution video")
-            return -1
-            
-        # Get video total frames
-        t_frames = self.count_frames(cap)    
-        #cria arquivo video hr if hr video is open
-        count = 0
-        time_elapsed = []
-        frame_steps = []
-        cap.set(1,0)
-        while cap.isOpened() and count < t_frames:
-            ret, frame = cap.read()
-            if ret:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                if count > 0:
-                    frame_steps.append(np.expand_dims(self.scale_lr_imgs(frame),0)) 
-                    frame_steps.pop(0)
-                else:
-                    frame_steps = [np.expand_dims(self.scale_lr_imgs(frame),0) for f in range(time_step)] 
-                start = timer()
-                img_sr = self.sr_genarator(model,frame_steps)
-                end = timer()
-                time_elapsed.append(end - start)
-                im = Image.fromarray(img_sr.astype(np.uint8))
-                im.save(p.stdin, 'JPEG')
-                count +=1
-            else:
-                break
-            if(count % print_frequency == 0):
-                print('Time per Frame: '+str(np.mean(time_elapsed))+'s')
-                print('Estimated time: '+str(np.mean(time_elapsed)*(t_frames-count)/60.)+'min')
-        p.stdin.close()
-        p.wait()
-        cap.release()
-        return time_elapsed
-
-
-def plot_test_images(model, loader, datapath_test, test_output, epoch, name='ESPCN'):
-    """        
-    :param SRGAN model: The trained SRGAN model
-    :param DataLoader loader: Instance of DataLoader for loading images
-    :param str datapath_test: path to folder with testing images
-    :param string test_output: Directory path for outputting testing images
-    :param int epoch: Identifier for how long the model has been trained
-    """
-
     try:   
         # Get the location of test images
         test_images = [os.path.join(datapath_test, f) for f in os.listdir(datapath_test) if any(filetype in f.lower() for filetype in ['jpeg','mp4','264', 'png', 'jpg'])]
@@ -553,17 +379,27 @@ def plot_test_images(model, loader, datapath_test, test_output, epoch, name='ESP
                         batch_size=1
                     ),
                     axis=0
-                )[:,:,0]
+                )
             pre[pre[:] > 255] = 255
             pre[pre[:] < 0] = 0
-            # SRCNN prediction
             imgs_sr.append(pre)
  
         
         # Unscale colors values
-        imgs_lr = [loader.unscale_lr_imgs(img[:,:,0]).astype(np.uint8) for img in imgs_lr]
-        imgs_hr = [loader.unscale_hr_imgs(img[:,:,0]).astype(np.uint8) for img in imgs_hr]
-        imgs_sr = [loader.unscale_hr_imgs(img).astype(np.uint8) for img in imgs_sr]
+        if channels == 1:
+            imgs_lr = [loader.unscale_lr_imgs(img[:,:,0]).astype(np.uint8) for img in imgs_lr]
+            imgs_hr = [loader.unscale_hr_imgs(img[:,:,0]).astype(np.uint8) for img in imgs_hr]
+            imgs_sr = [loader.unscale_hr_imgs(img[:,:,0]).astype(np.uint8) for img in imgs_sr]
+        else:
+            if(colorspace == 'YCbCr'):
+                imgs_lr = [cv2.cvtColor(loader.unscale_lr_imgs(img).astype(np.uint8), cv2.COLOR_YCrCb2BGR) for img in imgs_lr]
+                imgs_hr = [cv2.cvtColor(loader.unscale_hr_imgs(img).astype(np.uint8), cv2.COLOR_YCrCb2BGR) for img in imgs_hr]
+                imgs_sr = [cv2.cvtColor(loader.unscale_hr_imgs(img).astype(np.uint8), cv2.COLOR_YCrCb2BGR) for img in imgs_sr]
+                
+            else:
+                imgs_lr = [loader.unscale_lr_imgs(img).astype(np.uint8) for img in imgs_lr]
+                imgs_hr = [loader.unscale_hr_imgs(img).astype(np.uint8) for img in imgs_hr]
+                imgs_sr = [loader.unscale_hr_imgs(img).astype(np.uint8) for img in imgs_sr]
 	
 
         # Loop through images
@@ -571,6 +407,8 @@ def plot_test_images(model, loader, datapath_test, test_output, epoch, name='ESP
 
             # Get the filename
             filename = os.path.basename(img_path).split(".")[0]
+            
+            # Bicubic upscale
             hr_shape = (int(img_hr.shape[1]), int(img_hr.shape[0]))                      
             img_bi = cv2.resize(img_lr,hr_shape, interpolation = cv2.INTER_CUBIC)
 	    
