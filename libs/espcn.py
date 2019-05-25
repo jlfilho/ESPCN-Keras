@@ -189,13 +189,13 @@ class ESPCN():
         # Callback: Stop training when a monitored quantity has stopped improving
         earlystopping = EarlyStopping(
             monitor='val_loss', 
-            patience=40, verbose=1, 
+            patience=6000, verbose=1, 
             restore_best_weights=True )
         callbacks.append(earlystopping)
 
         # Callback: Reduce lr when a monitored quantity has stopped improving
-        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5,
-                                    patience=20, min_lr=1e-4)
+        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=1e-1,
+                                    patience=5000, min_lr=1e-6,verbose=1)
         callbacks.append(reduce_lr)
 
         # Callback: save weights after each epoch
@@ -264,7 +264,7 @@ if __name__ == "__main__":
 
     # Instantiate the ESPCN object
     print(">> Creating the ESPCN network")
-    espcn = ESPCN(height_lr=17, width_lr=17,channels=3,lr=1e-2,upscaling_factor=2,colorspace = 'RGB')
+    espcn = ESPCN(height_lr=17, width_lr=17,channels=3,lr=1e-4,upscaling_factor=2,colorspace = 'RGB')
     espcn.load_weights(weights='../model/ESPCN_2X.h5')
 
 
@@ -274,20 +274,20 @@ if __name__ == "__main__":
             media_type = 'i'
     ) """
 
-    t = espcn.predict(
+    """ t = espcn.predict(
             lr_path='../out/videoSRC148_640x360_24_qp_00.264', 
             sr_path='../out/videoSRC148_640x360_24_qp_00.mp4',
             qp=8,
             print_frequency=30,
             fps=60,
             media_type='v'
-    )
+    ) """
     
 
-    """ espcn.train(
-            epochs=1000,
+    espcn.train(
+            epochs=10000,
             batch_size=128,
-            steps_per_epoch=10,
+            steps_per_epoch=10, #625
             steps_per_validation=10,
             crops_per_image=4,
             print_frequency=1,
@@ -302,5 +302,5 @@ if __name__ == "__main__":
             log_weight_path='../model/', 
             log_tensorboard_path='../logs/',
             log_test_path='../test/'
-    ) """
+    )
 
