@@ -9,7 +9,7 @@ from keras.callbacks import TensorBoard, ModelCheckpoint, LambdaCallback
 from keras.callbacks import ReduceLROnPlateau, EarlyStopping
 from keras.initializers import RandomNormal
 
-
+import restore 
 from util import DataLoader, plot_test_images
 from losses import psnr3 as psnr
 from losses import euclidean
@@ -233,17 +233,58 @@ class ESPCN():
             use_multiprocessing=workers>1,
             workers=workers
         )
+    
+
+    def predict(self,
+            lr_path = None,
+            sr_path = None,
+            print_frequency = False,
+            qp = 8,
+            fps = None,
+            media_type = None 
+        ):
+        """ lr_videopath: path of video in low resoluiton
+            sr_videopath: path to output video 
+            print_frequency: print frequncy the time per frame and estimated time, if False no print 
+            crf: [0,51] QP parameter 0 is the best quality and 51 is the worst one
+            fps: framerate if None is use the same framerate of the LR video
+            media_type: type of media 'v' to video and 'i' to image
+        """
+        if(media_type == 'v'):
+            time_elapsed = restore.write_srvideo(self.model,lr_path,sr_path,self.upscaling_factor,print_frequency=print_frequency,crf=qp,fps=fps)
+        elif(media_type == 'i'):
+            time_elapsed = restore.write_sr_images(self.model, lr_imagepath=lr_path, sr_imagepath=sr_path,scale=self.upscaling_factor)
+        else:
+            print(">> Media type not defined or not suported!")
+            return 0
+        return time_elapsed
 
 # Run the ESPCN network
 if __name__ == "__main__":
 
-    # Instantiate the TSRGAN object
+    # Instantiate the ESPCN object
     print(">> Creating the ESPCN network")
     espcn = ESPCN(height_lr=17, width_lr=17,channels=3,lr=1e-2,upscaling_factor=2,colorspace = 'RGB')
-    #espcn.load_weights(weights='../model/ESPCN_2X.h5')
+    espcn.load_weights(weights='../model/ESPCN_2X.h5')
+
+
+    """ t = espcn.predict(
+            lr_path = '../../data/benchmarks/Set5/baby.png', 
+            sr_path = '../out/baby.png',
+            media_type = 'i'
+    ) """
+
+    t = espcn.predict(
+            lr_path='../out/videoSRC148_640x360_24_qp_00.264', 
+            sr_path='../out/videoSRC148_640x360_24_qp_00.mp4',
+            qp=8,
+            print_frequency=30,
+            fps=60,
+            media_type='v'
+    )
     
 
-    espcn.train(
+    """ espcn.train(
             epochs=1000,
             batch_size=128,
             steps_per_epoch=10,
@@ -261,5 +302,5 @@ if __name__ == "__main__":
             log_weight_path='../model/', 
             log_tensorboard_path='../logs/',
             log_test_path='../test/'
-    )
+    ) """
 
