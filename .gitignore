@@ -55,7 +55,7 @@ output/
 test/
 validation/
 data/
-output/
+out/
 logs/
 model/
 
