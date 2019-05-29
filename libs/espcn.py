@@ -1,6 +1,8 @@
 import os
 import tensorflow as tf
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+os.environ['CUDA_VISIBLE_DEVICES']='0' #Set a single gpu
+
 from keras.layers import Input, Conv2D, Lambda
 from keras.layers import ReLU, Activation
 from keras.optimizers import SGD, Adam
@@ -8,6 +10,7 @@ from keras.models import Model
 from keras.callbacks import TensorBoard, ModelCheckpoint, LambdaCallback
 from keras.callbacks import ReduceLROnPlateau, EarlyStopping
 from keras.initializers import RandomNormal
+from keras_tqdm import TQDMCallback
 
 import restore 
 from util import DataLoader, plot_test_images
@@ -25,7 +28,7 @@ class ESPCN():
         colorspace: 'RGB' or 'YCbCr'
     """
     def __init__(self,
-                 height_lr=24, width_lr=24, channels=1,
+                 height_lr=24, width_lr=24, channels=3,
                  upscaling_factor=4, lr = 1e-3,
                  training_mode=True,
                  colorspace = 'RGB'
@@ -95,7 +98,7 @@ class ESPCN():
 
             return Lambda(subpixel, output_shape=subpixel_shape, name=name)
 
-        inputs = Input(shape=(None, None, self.channels))
+        inputs = Input(shape=(None, None, self.channels),name='input_1')
 
 
         x = Conv2D(filters = 64, kernel_size = (5,5), strides=1,
@@ -115,7 +118,7 @@ class ESPCN():
         x = Activation('tanh')(x)
         
         model = Model(inputs=inputs, outputs=x)
-        model.summary()
+        #model.summary()
         return model
 
     def train(self,
@@ -189,13 +192,13 @@ class ESPCN():
         # Callback: Stop training when a monitored quantity has stopped improving
         earlystopping = EarlyStopping(
             monitor='val_loss', 
-            patience=6000, verbose=1, 
+            patience=500, verbose=1, 
             restore_best_weights=True )
         callbacks.append(earlystopping)
 
         # Callback: Reduce lr when a monitored quantity has stopped improving
-        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=1e-1,
-                                    patience=5000, min_lr=1e-6,verbose=1)
+        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5,
+                                    patience=100, min_lr=1e-6,verbose=1)
         callbacks.append(reduce_lr)
 
         # Callback: save weights after each epoch
@@ -287,10 +290,10 @@ if __name__ == "__main__":
     espcn.train(
             epochs=10000,
             batch_size=128,
-            steps_per_epoch=10, #625
+            steps_per_epoch=30, #625
             steps_per_validation=10,
             crops_per_image=4,
-            print_frequency=1,
+            print_frequency=10,
             log_tensorboard_update_freq=10,
             workers=2,
             max_queue_size=11,

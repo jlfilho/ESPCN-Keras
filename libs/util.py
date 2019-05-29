@@ -380,8 +380,8 @@ def plot_test_images(model, loader, datapath_test, test_output, epoch, name='SRC
                     ),
                     axis=0
                 )
-            pre[pre[:] > 255] = 255
-            pre[pre[:] < 0] = 0
+            #pre[pre[:] > 255] = 255
+            #pre[pre[:] < 0] = 0
             imgs_sr.append(pre)
  
         
