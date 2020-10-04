@@ -1,4 +1,6 @@
 import os
+import logging
+import fnmatch
 import tensorflow as tf
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 os.environ['CUDA_VISIBLE_DEVICES']='0' #Set a single gpu
@@ -267,62 +269,86 @@ class ESPCN():
             return 0
         return time_elapsed
 
-# Run the ESPCN network
-if __name__ == "__main__":
 
+def restoration(resolution=None,k=1,qp='25'):
+    logging.basicConfig(filename='../logs/espcn.log', level=logging.INFO)
+    logging.info('Started')
+    #------------------------------------------------------
+
+    # Instantiate the TSRGAN object
+    logging.info(">> Creating the ESPCN network")
     # Instantiate the ESPCN object
-    print(">> Creating the ESPCN network")
     espcn = ESPCN(height_lr=17, width_lr=17,channels=3,lr=1e-4,upscaling_factor=2,colorspace = 'RGB')
     espcn.load_weights(weights='../model/ESPCN_2X.h5')
 
-    
-    """ datapath = '../../data/videoset/540p/' 
-    outpath = '../out/540p_2X/'
-    for dirpath, _, filenames in os.walk(datapath):
-        for filename in [f for f in sorted(filenames) if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma'])]:
-            print(os.path.join(dirpath, filename),outpath+filename.split('.')[0]+'.mp4')
-            t = espcn.predict(
-                    lr_path=os.path.join(dirpath, filename), 
-                    sr_path=outpath+filename.split('.')[0]+'.mp4',
-                    qp=0,
-                    media_type='v',
-                    gpu=False
-                ) """
 
-    datapath = '../../data/videoset/360p/' 
-    outpath = '../out/360p_2X/'
-    for dirpath, _, filenames in os.walk(datapath):
+
+    if(resolution==None):
+        datapath = '/media/joao/SAMSUNG2/data/videoSRC180_960x540_24_mp4/' 
+        outpath ='/media/joao/SAMSUNG2/data/out/ESPCN/'
+        lfilenames = []
+        for dirpath, _, filenames in os.walk(datapath):
+            lfilenames = [os.path.join(dirpath, f) for f in filenames if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma'])]
         i=1
-        for filename in [f for f in sorted(filenames) if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma'])]:
-            if i>28:
-                print(os.path.join(dirpath, filename),outpath+filename.split('.')[0]+'.mp4')
+        for filename in sorted(lfilenames):
+            if(i>=k):
+                print("i={} - {} {}".format(i,filename,outpath+filename.split('/')[-1].split('.')[0]+'.mp4'))
                 t = espcn.predict(
-                        lr_path=os.path.join(dirpath, filename), 
-                        sr_path=outpath+filename.split('.')[0]+'.mp4',
+                        lr_path=filename,
+                        sr_path=outpath+filename.split('/')[-1].split('.')[0]+'.mp4',
+                        qp=i-1,
+                        media_type='v',
+                        gpu=False
+                    )
+            i+=1
+
+    if(resolution=='540p'):
+        datapath = '/media/joao/SAMSUNG2/videoset_compress/540p/' #'../../data/videoset/540p/' 
+        outpath = '/media/joao/SAMSUNG1/data/CISRDCNN-keras/out/540p_2X_qp25/' #'../out/540p_2X/'
+        lfilenames = [] 
+        for dirpath, _, filenames in os.walk(datapath):
+            item = [f for f in filenames if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma']) if fnmatch.fnmatch(f, '*qp_'+str(qp)+'.264')]
+            if len(item):
+                lfilenames.append(os.path.join(dirpath, item[0]))
+        i=1
+        for filename in sorted(lfilenames): 
+            if(i>=k):
+                print("i={} - {} {}".format(i,filename,outpath+filename.split('/')[-1].split('.')[0]+'.mp4'))
+                t = espcn.predict(
+                        lr_path=filename,
+                        sr_path=outpath+filename.split('/')[-1].split('.')[0]+'.mp4',
                         qp=0,
                         media_type='v',
                         gpu=False
                     )
             i+=1
+
+    if(resolution=='360p'):
+        datapath = '/media/joao/SAMSUNG2/videoset_compress/360p/'#'../../data/videoset/360p/' 
+        outpath = '/media/joao/SAMSUNG1/data/CISRDCNN-keras/out/360p_2X_qp25/' #'../out/360p_2X/'
+        i=1
+        for dirpath, _, filenames in os.walk(datapath):
+            filenames = sorted([f for f in filenames if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma']) if fnmatch.fnmatch(f, '*qp_'+str(qp)+'.264')])
+            for filename in filenames:
+                if(i>=k):
+                    print("i={} - {}".format(i,os.path.join(dirpath, filename),outpath+filename.split('.')[0]+'.mp4'))
+                    t = espcn.predict(
+                            lr_path=os.path.join(dirpath, filename), 
+                            sr_path=outpath+filename.split('.')[0]+'.mp4',
+                            qp=0,
+                            media_type='v',
+                            gpu=False
+                        )
+                i+=1 
+
+    #------------------------------------------------------
+
+
+    logging.info('Finished')
+
+# Run the ESPCN network
+if __name__ == "__main__":
+
+    restoration()
+
     
-
-    """ espcn.train(
-            epochs=10000,
-            batch_size=128,
-            steps_per_epoch=30, #625
-            steps_per_validation=10,
-            crops_per_image=4,
-            print_frequency=10,
-            log_tensorboard_update_freq=10,
-            workers=4,
-            max_queue_size=11,
-            model_name='ESPCN',
-            media_type='i',
-            datapath_train='../../data/train2017/', 
-            datapath_validation='../../data/val_large', 
-            datapath_test='../../data//benchmarks/Set5/',
-            log_weight_path='../model/', 
-            log_tensorboard_path='../logs/',
-            log_test_path='../test/'
-    )  """
-

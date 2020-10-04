@@ -86,7 +86,6 @@ class DataLoader(Sequence):
     @staticmethod
     def scale_hr_imgs(imgs):
         """Scale high-res images prior to passing to SRGAN"""
-        #return imgs / 127.5 - 1
         return imgs / 255.
     
     @staticmethod

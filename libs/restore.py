@@ -79,9 +79,7 @@ def write_srvideo(model=None,lr_videopath=None,sr_videopath=None,scale=None,prin
     _fps = metadata['video']['@r_frame_rate'] if (fps == None) else str(fps)
     codec = 'h264_nvenc' if (gpu == 'True') else 'libx264' 
     writer = skvideo.io.FFmpegWriter(sr_videopath, 
-    inputdict={'-r': _fps, '-width': str(width*scale), '-height': str(height*scale)},
-    outputdict={'-vcodec': codec, '-r': _fps, '-crf': str(crf), '-pix_fmt': 'yuv420p',
-                '-b:v': selectBetterBitrate(height*scale,int(_fps.split('/')[0])/int(_fps.split('/')[1]))})
+    outputdict={'-vcodec': codec, '-r': _fps, '-crf': str(crf), '-pix_fmt': 'yuv420p'})
     count = 0
     time_elapsed = []
     print(">> Writing video...")
