@@ -1,3 +1,6 @@
+#!/usr/bin/python3
+# encoding: utf-8
+
 import os
 import sys
 os.environ['CUDA_VISIBLE_DEVICES']='0' #Set a single gpu
@@ -31,148 +34,148 @@ def parse_args():
     parser = ArgumentParser(description='Training script for ESPCN')
 
     parser.add_argument(
-        '-stage', '--stage',
+        '-s', '--stage',
         type=str, default='default',
         help='Which stage of training to run',
         choices=['all', 'default', 'finetune']
     )
 
     parser.add_argument(
-        '-epochs', '--epochs',
+        '-e', '--epochs',
         type=int, default=100000,
         help='Number epochs per train'
     )
 
     parser.add_argument(
-        '-train', '--train',
+        '-t', '--train',
         type=str, default='../../data/train_large/',
         help='Folder with training images'
     )
 
     parser.add_argument(
-        '-steps_per_epoch', '--steps_per_epoch',
+        '-spe', '--steps_per_epoch',
         type=int, default=10000,
         help='Steps per epoch'
     )
 
     parser.add_argument(
-        '-validation', '--validation',
+        '-v', '--validation',
         type=str, default='../data/val_large/',
         help='Folder with validation images'
     )
 
     parser.add_argument(
-        '-steps_per_validation', '--steps_per_validation',
+        '-spv', '--steps_per_validation',
         type=int, default=10,
         help='Steps per validation'
     )
     
     parser.add_argument(
-        '-test', '--test',
+        '-te', '--test',
         type=str, default='../data/benchmarks/Set5/',
         help='Folder with testing images'
     )
 
     parser.add_argument(
-        '-print_frequency', '--print_frequency',
+        '-pf', '--print_frequency',
         type=int, default=30,
         help='Frequency of print test images'
     )
         
     parser.add_argument(
-        '-modelname', '--modelname',
+        '-mn', '--modelname',
         type=str, default='ESPCN',
         help='ESPCN'
     )
         
     parser.add_argument(
-        '-scale', '--scale',
+        '-sc', '--scale',
         type=int, default=2,
         help='How much should we upscale images, e.g., 2, 4 or 8'
     )
 
     parser.add_argument(
-        '-scaleFrom', '--scaleFrom',
+        '-scf', '--scaleFrom',
         type=int, default=None,
         help='Perform transfer learning from lower-upscale model'
     )
         
     parser.add_argument(
-        '-workers', '--workers',
+        '-w', '--workers',
         type=int, default=4,
         help='How many workers to user for pre-processing'
     )
 
     parser.add_argument(
-        '-max_queue_size', '--max_queue_size',
-        type=int, default=5,
+        '-mqs', '--max_queue_size',
+        type=int, default=1000,
         help='Max queue size to workers'
     )
         
     parser.add_argument(
-        '-batch_size', '--batch_size',
+        '-bs', '--batch_size',
         type=int, default=128,
         help='What batch-size should we use'
     )
 
     parser.add_argument(
-        '-crops_per_image', '--crops_per_image',
+        '-cpi', '--crops_per_image',
         type=int, default=4,
         help='Increase in order to reduce random reads on disk (in case of slower SDDs or HDDs)'
     )           
         
     parser.add_argument(
-        '-weight_path', '--weight_path',
+        '-wp', '--weight_path',
         type=str, default='./model/',
         help='Where to output weights during training'
     )
 
     parser.add_argument(
-        '-log_tensorboard_update_freq', '--log_tensorboard_update_freq',
+        '-ltuf', '--log_tensorboard_update_freq',
         type=int, default=10,
         help='Frequency of update tensorboard weight'
     )
         
     parser.add_argument(
-        '-log_path', '--log_path',
+        '-lp', '--log_path',
         type=str, default='./logs/',
         help='Where to output tensorboard logs during training'
     )
 
     parser.add_argument(
-        '-log_test_path', '--log_test_path',
+        '-ltp', '--log_test_path',
         type=str, default='./test/',
         help='Path to generate images in train'
     )
 
 
     parser.add_argument(
-        '-height_lr', '--height_lr',
+        '-hlr', '--height_lr',
         type=int, default=16,
         help='height of lr crop'
     )
 
     parser.add_argument(
-        '-width_lr', '--width_lr',
+        '-wlr', '--width_lr',
         type=int, default=16,
         help='width of lr crop'
     )
 
     parser.add_argument(
-        '-channels', '--channels',
+        '-c', '--channels',
         type=int, default=3,
         help='channels of images'
     )
 
     parser.add_argument(
-        '-colorspace', '--colorspace',
+        '-cs', '--colorspace',
         type=str, default='RGB',
         help='Colorspace of images, e.g., RGB or YYCbCr'
     )
 
 
     parser.add_argument(
-        '-media_type', '--media_type',
+        '-mt', '--media_type',
         type=str, default='i',
         help='Type of media i to image or v to video'
     )
@@ -297,8 +300,9 @@ if __name__ == '__main__':
         
         else:
             print(">> TRAIN DEFAULT MODEL ESPCN: scale {}X".format(args.scale))
-            # As in paper - train for 10^-3 epochs
-            espcn = ESPCN(lr=1e-3,**args_model) 
+            # As in paper - train for x epochs
+            espcn = ESPCN(lr=1e-2,**args_model) 
+            #espcn.load_weights("./model/ESPCN_2X.h5")
             model_train(espcn, args_train, epochs=args.epochs)
                
         

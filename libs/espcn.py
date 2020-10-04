@@ -11,6 +11,7 @@ from keras.callbacks import TensorBoard, ModelCheckpoint, LambdaCallback
 from keras.callbacks import ReduceLROnPlateau, EarlyStopping
 from keras.initializers import RandomNormal
 from keras_tqdm import TQDMCallback
+from tensorflow.keras.utils import OrderedEnqueuer, GeneratorEnqueuer, SequenceEnqueuer
 
 import restore 
 from util import DataLoader, plot_test_images
@@ -29,7 +30,7 @@ class ESPCN():
     """
     def __init__(self,
                  height_lr=24, width_lr=24, channels=3,
-                 upscaling_factor=4, lr = 1e-3,
+                 upscaling_factor=4, lr = 1e-2,
                  training_mode=True,
                  colorspace = 'RGB'
                  ):
@@ -100,17 +101,13 @@ class ESPCN():
 
         inputs = Input(shape=(None, None, self.channels),name='input_1')
 
-
-        x = Conv2D(filters = 64, kernel_size = (5,5), strides=1,
-                kernel_initializer=RandomNormal(mean=0.0, stddev=0.001, seed=None),bias_initializer='zeros', 
+        x = Conv2D(filters = 64, kernel_size = (5,5), strides=1, 
                 padding = "same",activation='relu',name='conv_1')(inputs)
 
-        x = Conv2D(filters = 32, kernel_size = (3,3), strides=1,
-                kernel_initializer=RandomNormal(mean=0.0, stddev=0.001, seed=None),bias_initializer='zeros', 
+        x = Conv2D(filters = 32, kernel_size = (3,3), strides=1, 
                 padding = "same",activation='relu',name='conv_2')(x)
         
-        x = Conv2D(filters = self.upscaling_factor**2*self.channels, kernel_size = (3,3), strides=1,
-                kernel_initializer=RandomNormal(mean=0.0, stddev=0.001, seed=None),bias_initializer='zeros', 
+        x = Conv2D(filters = self.upscaling_factor**2*self.channels, kernel_size = (3,3), strides=1, 
                 padding = "same",name='conv_3')(x)
         
         x = SubpixelConv2D(scale=self.upscaling_factor,name='subpixel_1')(x)
@@ -192,13 +189,13 @@ class ESPCN():
         # Callback: Stop training when a monitored quantity has stopped improving
         earlystopping = EarlyStopping(
             monitor='val_loss', 
-            patience=500, verbose=1, 
+            patience=100, verbose=1, 
             restore_best_weights=True )
         callbacks.append(earlystopping)
 
         # Callback: Reduce lr when a monitored quantity has stopped improving
         reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5,
-                                    patience=100, min_lr=1e-6,verbose=1)
+                                    patience=100, min_lr=1e-4,verbose=1)
         callbacks.append(reduce_lr)
 
         # Callback: save weights after each epoch
@@ -223,19 +220,26 @@ class ESPCN():
                     colorspace=self.colorspace))
         callbacks.append(testplotting)
 
-        #callbacks.append(TQDMCallback())
+        # Use several workers on CPU for preparing batches
+        enqueuer = OrderedEnqueuer(
+            train_loader,
+            use_multiprocessing=True
+        )
+        enqueuer.start(workers=workers, max_queue_size=max_queue_size)
+        output_generator = enqueuer.get()
 
         self.model.fit_generator(
-            train_loader,
+            output_generator,
             steps_per_epoch=steps_per_epoch,
             epochs=epochs,
             validation_data=validation_loader,
             validation_steps=steps_per_validation,
             callbacks=callbacks,
-            shuffle=True,
-            use_multiprocessing=workers>1,
-            workers=workers
+            #shuffle=True,
+            use_multiprocessing=False, #workers>1 
+            workers=1 #workers
         )
+
     
 
     def predict(self,
@@ -244,7 +248,8 @@ class ESPCN():
             print_frequency = False,
             qp = 8,
             fps = None,
-            media_type = None 
+            media_type = None,
+            gpu=False 
         ):
         """ lr_videopath: path of video in low resoluiton
             sr_videopath: path to output video 
@@ -254,7 +259,7 @@ class ESPCN():
             media_type: type of media 'v' to video and 'i' to image
         """
         if(media_type == 'v'):
-            time_elapsed = restore.write_srvideo(self.model,lr_path,sr_path,self.upscaling_factor,print_frequency=print_frequency,crf=qp,fps=fps)
+            time_elapsed = restore.write_srvideo(self.model,lr_path,sr_path,self.upscaling_factor,print_frequency=print_frequency,crf=qp,fps=fps,gpu=gpu)
         elif(media_type == 'i'):
             time_elapsed = restore.write_sr_images(self.model, lr_imagepath=lr_path, sr_imagepath=sr_path,scale=self.upscaling_factor)
         else:
@@ -270,24 +275,38 @@ if __name__ == "__main__":
     espcn = ESPCN(height_lr=17, width_lr=17,channels=3,lr=1e-4,upscaling_factor=2,colorspace = 'RGB')
     espcn.load_weights(weights='../model/ESPCN_2X.h5')
 
+    
+    """ datapath = '../../data/videoset/540p/' 
+    outpath = '../out/540p_2X/'
+    for dirpath, _, filenames in os.walk(datapath):
+        for filename in [f for f in sorted(filenames) if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma'])]:
+            print(os.path.join(dirpath, filename),outpath+filename.split('.')[0]+'.mp4')
+            t = espcn.predict(
+                    lr_path=os.path.join(dirpath, filename), 
+                    sr_path=outpath+filename.split('.')[0]+'.mp4',
+                    qp=0,
+                    media_type='v',
+                    gpu=False
+                ) """
 
-    """ t = espcn.predict(
-            lr_path = '../../data/benchmarks/Set5/baby.png', 
-            sr_path = '../out/baby.png',
-            media_type = 'i'
-    ) """
-
-    """ t = espcn.predict(
-            lr_path='../out/videoSRC148_640x360_24_qp_00.264', 
-            sr_path='../out/videoSRC148_640x360_24_qp_00.mp4',
-            qp=8,
-            print_frequency=30,
-            fps=60,
-            media_type='v'
-    ) """
+    datapath = '../../data/videoset/360p/' 
+    outpath = '../out/360p_2X/'
+    for dirpath, _, filenames in os.walk(datapath):
+        i=1
+        for filename in [f for f in sorted(filenames) if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma'])]:
+            if i>28:
+                print(os.path.join(dirpath, filename),outpath+filename.split('.')[0]+'.mp4')
+                t = espcn.predict(
+                        lr_path=os.path.join(dirpath, filename), 
+                        sr_path=outpath+filename.split('.')[0]+'.mp4',
+                        qp=0,
+                        media_type='v',
+                        gpu=False
+                    )
+            i+=1
     
 
-    espcn.train(
+    """ espcn.train(
             epochs=10000,
             batch_size=128,
             steps_per_epoch=30, #625
@@ -295,7 +314,7 @@ if __name__ == "__main__":
             crops_per_image=4,
             print_frequency=10,
             log_tensorboard_update_freq=10,
-            workers=2,
+            workers=4,
             max_queue_size=11,
             model_name='ESPCN',
             media_type='i',
@@ -305,5 +324,5 @@ if __name__ == "__main__":
             log_weight_path='../model/', 
             log_tensorboard_path='../logs/',
             log_test_path='../test/'
-    )
+    )  """
 

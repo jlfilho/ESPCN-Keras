@@ -92,8 +92,10 @@ class DataLoader(Sequence):
     @staticmethod
     def unscale_hr_imgs(imgs):
         """Un-Scale high-res images"""
-        #return (imgs + 1.) * 127.5
-        return imgs * 255
+        pre = imgs * 255.
+        pre[pre[:] > 255.] = 255.
+        pre[pre[:] < 0.] = 0.
+        return pre
     
     def count_frames_manual(self,cap):
         count=0
@@ -327,9 +329,10 @@ class DataLoader(Sequence):
                     if img_paths is not None and len(imgs_hr) == len(img_paths):
                         break   
 
+
                     # For LR, do bicubic downsampling
-                    lr_shape = (int(img_hr.shape[1]/self.scale), int(img_hr.shape[0]/self.scale))                      
-                    img_lr = cv2.resize(img_hr,lr_shape, interpolation = cv2.INTER_CUBIC)
+                    lr_shape = (int(img_hr.shape[1]/self.scale), int(img_hr.shape[0]/self.scale))  
+                    img_lr = cv2.resize(cv2.GaussianBlur(img_hr,(5,5),0),lr_shape, interpolation = cv2.INTER_CUBIC)
 
                     
                     # Scale color values
@@ -380,8 +383,7 @@ def plot_test_images(model, loader, datapath_test, test_output, epoch, name='SRC
                     ),
                     axis=0
                 )
-            #pre[pre[:] > 255] = 255
-            #pre[pre[:] < 0] = 0
+            
             imgs_sr.append(pre)
  
         
